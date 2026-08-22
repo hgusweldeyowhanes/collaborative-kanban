@@ -22,12 +22,22 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
     public void Configure(EntityTypeBuilder<Card> builder)
     {
         builder.Property(c => c.Title).IsRequired().HasMaxLength(200);
-        builder.Property(c => c.Description).HasMaxLength(2000);
+        builder.Property(c => c.Description).HasMaxLength(4000);
 
         builder.HasOne(c => c.Assignee)
             .WithMany()
             .HasForeignKey(c => c.AssigneeId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasMany(c => c.Comments)
+            .WithOne(x => x.Card)
+            .HasForeignKey(x => x.CardId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(c => c.CardLabels)
+            .WithOne(x => x.Card)
+            .HasForeignKey(x => x.CardId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
 

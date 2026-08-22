@@ -93,6 +93,38 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.ToTable("Boards");
                 });
 
+            modelBuilder.Entity("TaskFlow.Domain.Entities.BoardLabel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BoardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Color")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoardId");
+
+                    b.ToTable("BoardLabels");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Entities.BoardList", b =>
                 {
                     b.Property<Guid>("Id")
@@ -170,8 +202,11 @@ namespace TaskFlow.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Description")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTime?>("DueDateUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("Order")
                         .HasColumnType("integer");
@@ -193,6 +228,53 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.ToTable("Cards");
                 });
 
+            modelBuilder.Entity("TaskFlow.Domain.Entities.CardComment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("AuthorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<Guid>("CardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AuthorId");
+
+                    b.HasIndex("CardId");
+
+                    b.ToTable("CardComments");
+                });
+
+            modelBuilder.Entity("TaskFlow.Domain.Entities.CardLabel", b =>
+                {
+                    b.Property<Guid>("CardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("LabelId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("CardId", "LabelId");
+
+                    b.HasIndex("LabelId");
+
+                    b.ToTable("CardLabels");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Entities.Board", b =>
                 {
                     b.HasOne("TaskFlow.Domain.Entities.AppUser", "Owner")
@@ -202,6 +284,17 @@ namespace TaskFlow.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("TaskFlow.Domain.Entities.BoardLabel", b =>
+                {
+                    b.HasOne("TaskFlow.Domain.Entities.Board", "Board")
+                        .WithMany("Labels")
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Board");
                 });
 
             modelBuilder.Entity("TaskFlow.Domain.Entities.BoardList", b =>
@@ -252,16 +345,68 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.Navigation("BoardList");
                 });
 
+            modelBuilder.Entity("TaskFlow.Domain.Entities.CardComment", b =>
+                {
+                    b.HasOne("TaskFlow.Domain.Entities.AppUser", "Author")
+                        .WithMany()
+                        .HasForeignKey("AuthorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TaskFlow.Domain.Entities.Card", "Card")
+                        .WithMany("Comments")
+                        .HasForeignKey("CardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Author");
+
+                    b.Navigation("Card");
+                });
+
+            modelBuilder.Entity("TaskFlow.Domain.Entities.CardLabel", b =>
+                {
+                    b.HasOne("TaskFlow.Domain.Entities.Card", "Card")
+                        .WithMany("CardLabels")
+                        .HasForeignKey("CardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("TaskFlow.Domain.Entities.BoardLabel", "Label")
+                        .WithMany("CardLabels")
+                        .HasForeignKey("LabelId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Card");
+
+                    b.Navigation("Label");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Entities.Board", b =>
                 {
+                    b.Navigation("Labels");
+
                     b.Navigation("Lists");
 
                     b.Navigation("Members");
                 });
 
+            modelBuilder.Entity("TaskFlow.Domain.Entities.BoardLabel", b =>
+                {
+                    b.Navigation("CardLabels");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Entities.BoardList", b =>
                 {
                     b.Navigation("Cards");
+                });
+
+            modelBuilder.Entity("TaskFlow.Domain.Entities.Card", b =>
+                {
+                    b.Navigation("CardLabels");
+
+                    b.Navigation("Comments");
                 });
 #pragma warning restore 612, 618
         }

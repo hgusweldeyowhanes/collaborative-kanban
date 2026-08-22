@@ -153,6 +153,11 @@ app.UseExceptionHandler(errorApp =>
             statusCode = 401;
             body = new { title = "Unauthorized" };
         }
+        else if (exception is InvalidOperationException iex)
+        {
+            statusCode = 400;
+            body = new { title = iex.Message };
+        }
 
         Log.Error(exception, "Unhandled exception processing {Path}", context.Request.Path);
 

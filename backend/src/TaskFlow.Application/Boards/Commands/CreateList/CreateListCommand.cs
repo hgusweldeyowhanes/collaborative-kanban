@@ -1,5 +1,6 @@
 using FluentValidation;
 using MediatR;
+using TaskFlow.Application.Common;
 using TaskFlow.Application.Common.Interfaces;
 using TaskFlow.Domain.Entities;
 
@@ -20,17 +21,21 @@ public class CreateListCommandHandler : IRequestHandler<CreateListCommand, Guid>
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IBoardNotifier _notifier;
 
-    public CreateListCommandHandler(IApplicationDbContext context, ICurrentUserService currentUser)
+    public CreateListCommandHandler(
+        IApplicationDbContext context,
+        ICurrentUserService currentUser,
+        IBoardNotifier notifier)
     {
         _context = context;
         _currentUser = currentUser;
+        _notifier = notifier;
     }
 
     public async Task<Guid> Handle(CreateListCommand request, CancellationToken cancellationToken)
     {
-        if (_currentUser.UserId is null)
-            throw new UnauthorizedAccessException("No authenticated user.");
+        await BoardAuthorization.EnsureCanEditAsync(_context, request.BoardId, _currentUser.UserId, cancellationToken);
 
         var maxOrder = _context.BoardLists
             .Where(l => l.BoardId == request.BoardId)
@@ -46,6 +51,7 @@ public class CreateListCommandHandler : IRequestHandler<CreateListCommand, Guid>
 
         _context.BoardLists.Add(list);
         await _context.SaveChangesAsync(cancellationToken);
+        await _notifier.NotifyBoardChangedAsync(request.BoardId, "ListCreated", cancellationToken);
 
         return list.Id;
     }

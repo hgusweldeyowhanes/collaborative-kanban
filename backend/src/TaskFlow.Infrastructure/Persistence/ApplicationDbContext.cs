@@ -13,6 +13,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Card> Cards => Set<Card>();
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<BoardMember> BoardMembers => Set<BoardMember>();
+    public DbSet<BoardLabel> BoardLabels => Set<BoardLabel>();
+    public DbSet<CardLabel> CardLabels => Set<CardLabel>();
+    public DbSet<CardComment> CardComments => Set<CardComment>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

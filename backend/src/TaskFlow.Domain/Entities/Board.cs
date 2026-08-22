@@ -12,4 +12,5 @@ public class Board : BaseEntity
 
     public ICollection<BoardList> Lists { get; set; } = new List<BoardList>();
     public ICollection<BoardMember> Members { get; set; } = new List<BoardMember>();
+    public ICollection<BoardLabel> Labels { get; set; } = new List<BoardLabel>();
 }

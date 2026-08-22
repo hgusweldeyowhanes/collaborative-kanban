@@ -2,18 +2,19 @@ import { useEffect, useRef } from "react";
 import * as signalR from "@microsoft/signalr";
 import { useAuthStore } from "../store/authStore";
 import { API_BASE_URL } from "../api/client";
-import type { CardMovedEvent } from "../types";
+import type { BoardChangedEvent, CardMovedEvent } from "../types";
 
 interface UseSignalROptions {
   boardId: string | undefined;
   onCardMoved: (event: CardMovedEvent) => void;
+  onBoardChanged?: (event: BoardChangedEvent) => void;
 }
 
-// Opens one SignalR connection per mounted board view, joins the
-// board-scoped group on the server, and tears down cleanly on unmount
-// or when the user navigates to a different board.
-export function useSignalR({ boardId, onCardMoved }: UseSignalROptions) {
-  const connectionRef = useRef<signalR.HubConnection | null>(null);
+export function useSignalR({ boardId, onCardMoved, onBoardChanged }: UseSignalROptions) {
+  const onCardMovedRef = useRef(onCardMoved);
+  const onBoardChangedRef = useRef(onBoardChanged);
+  onCardMovedRef.current = onCardMoved;
+  onBoardChangedRef.current = onBoardChanged;
 
   useEffect(() => {
     if (!boardId) return;
@@ -27,20 +28,19 @@ export function useSignalR({ boardId, onCardMoved }: UseSignalROptions) {
       .withAutomaticReconnect()
       .build();
 
-    connection.on("CardMoved", onCardMoved);
+    connection.on("CardMoved", (event: CardMovedEvent) => onCardMovedRef.current(event));
+    connection.on("BoardChanged", (event: BoardChangedEvent) => {
+      onBoardChangedRef.current?.(event);
+    });
 
     connection
       .start()
       .then(() => connection.invoke("JoinBoard", boardId))
       .catch((err) => console.error("SignalR connection failed:", err));
 
-    connectionRef.current = connection;
-
     return () => {
       connection.invoke("LeaveBoard", boardId).catch(() => {});
       connection.stop();
-      connectionRef.current = null;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardId]);
 }

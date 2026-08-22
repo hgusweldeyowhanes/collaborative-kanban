@@ -13,6 +13,9 @@ public interface IApplicationDbContext
     DbSet<Card> Cards { get; }
     DbSet<AppUser> Users { get; }
     DbSet<BoardMember> BoardMembers { get; }
+    DbSet<BoardLabel> BoardLabels { get; }
+    DbSet<CardLabel> CardLabels { get; }
+    DbSet<CardComment> CardComments { get; }
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
 }

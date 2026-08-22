@@ -68,16 +68,19 @@ cd backend
 dotnet test
 ```
 
-## What's scaffolded vs. what to build next
+## What's included
 
-This repo is a working skeleton, not a finished app — intentionally, so building it out is the actual learning exercise. Already wired: auth, board creation/listing, card-move persistence + broadcast, CI, Docker.
+Working features beyond the original skeleton:
 
-Suggested build order for the rest of the week:
-1. **`GetBoardDetailQuery`** — return a board's lists + cards (follow the `GetBoardsQuery` pattern exactly). Wire it into `BoardViewPage` with `useQuery` instead of the placeholder local state.
-2. **`CreateListCommand` / `CreateCardCommand`** — same CQRS pattern again. By the third vertical slice this should feel mechanical — that repetition is the point.
-3. **Board membership & authorization** — a `[Authorize]` policy or MediatR behavior that checks the current user is a member of the board being mutated, not just any authenticated user.
-4. **Optimistic concurrency** — add a `RowVersion` column to `Card`, handle `DbUpdateConcurrencyException` when two users move the same card at once.
-5. **Deploy for real** — API to Render or Fly.io, frontend to Vercel/Netlify, Postgres to Neon. Point CI at it with a deploy job.
+1. **Card detail** — click a card to edit title/description, delete
+2. **Assignments** — assign any board member
+3. **Board members** — invite by registered email; mutations require Editor+; invites require Admin
+4. **Due dates + labels** — board labels with colors; due date on cards
+5. **Comments** — threaded discussion on each card
+6. **Within-list reorder** — drag computes real `newOrder` (not always `0`)
+7. **Realtime `BoardChanged`** — create/update/delete/invite refreshes other clients
+
+Suggested next steps: optimistic concurrency (`RowVersion` on `Card`), deploy to Render/Vercel/Neon.
 
 ## Project layout
 

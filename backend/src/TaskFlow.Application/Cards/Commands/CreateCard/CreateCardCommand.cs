@@ -1,5 +1,7 @@
 using FluentValidation;
 using MediatR;
+using Microsoft.EntityFrameworkCore;
+using TaskFlow.Application.Common;
 using TaskFlow.Application.Common.Interfaces;
 using TaskFlow.Domain.Entities;
 
@@ -21,17 +23,26 @@ public class CreateCardCommandHandler : IRequestHandler<CreateCardCommand, Guid>
 {
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
+    private readonly IBoardNotifier _notifier;
 
-    public CreateCardCommandHandler(IApplicationDbContext context, ICurrentUserService currentUser)
+    public CreateCardCommandHandler(
+        IApplicationDbContext context,
+        ICurrentUserService currentUser,
+        IBoardNotifier notifier)
     {
         _context = context;
         _currentUser = currentUser;
+        _notifier = notifier;
     }
 
     public async Task<Guid> Handle(CreateCardCommand request, CancellationToken cancellationToken)
     {
-        if (_currentUser.UserId is null)
-            throw new UnauthorizedAccessException("No authenticated user.");
+        await BoardAuthorization.EnsureCanEditAsync(_context, request.BoardId, _currentUser.UserId, cancellationToken);
+
+        var listOk = await _context.BoardLists
+            .AnyAsync(l => l.Id == request.ListId && l.BoardId == request.BoardId, cancellationToken);
+        if (!listOk)
+            throw new KeyNotFoundException($"List {request.ListId} not found on board.");
 
         var maxOrder = _context.Cards
             .Where(c => c.BoardListId == request.ListId)
@@ -47,6 +58,7 @@ public class CreateCardCommandHandler : IRequestHandler<CreateCardCommand, Guid>
 
         _context.Cards.Add(card);
         await _context.SaveChangesAsync(cancellationToken);
+        await _notifier.NotifyBoardChangedAsync(request.BoardId, "CardCreated", cancellationToken);
 
         return card.Id;
     }
