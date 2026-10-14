@@ -22,6 +22,17 @@ export interface BoardChangedEvent {
   changeType: string;
 }
 
+export interface ActivityDto {
+  id: string;
+  boardId: string;
+  actorUserId: string;
+  actorName: string;
+  cardId: string | null;
+  action: string;
+  summary: string;
+  createdAtUtc: string;
+}
+
 export type BoardRole = "Viewer" | "Editor" | "Admin" | 0 | 1 | 2;
 
 export interface LabelDto {
@@ -52,6 +63,9 @@ export interface CardDto {
   assigneeName: string | null;
   dueDateUtc: string | null;
   labelIds: string[];
+  rowVersion: string | null;
+  checklistDone: number;
+  checklistTotal: number;
 }
 
 export interface BoardListDto {
@@ -78,10 +92,27 @@ export interface CommentDto {
   createdAtUtc: string;
 }
 
+export interface ChecklistItemDto {
+  id: string;
+  title: string;
+  isDone: boolean;
+  order: number;
+}
+
+export interface ChecklistDto {
+  id: string;
+  title: string;
+  order: number;
+  items: ChecklistItemDto[];
+}
+
 export interface UpdateCardPayload {
   title: string;
   description?: string | null;
   assigneeId?: string | null;
   dueDateUtc?: string | null;
   labelIds?: string[];
+  rowVersion?: string | null;
 }
+
+export type DuePreset = "all" | "overdue" | "thisWeek" | "none";
