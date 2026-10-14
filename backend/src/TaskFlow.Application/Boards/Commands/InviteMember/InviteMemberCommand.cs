@@ -24,15 +24,18 @@ public class InviteMemberCommandHandler : IRequestHandler<InviteMemberCommand, G
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IBoardNotifier _notifier;
+    private readonly IActivityWriter _activity;
 
     public InviteMemberCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IBoardNotifier notifier)
+        IBoardNotifier notifier,
+        IActivityWriter activity)
     {
         _context = context;
         _currentUser = currentUser;
         _notifier = notifier;
+        _activity = activity;
     }
 
     public async Task<Guid> Handle(InviteMemberCommand request, CancellationToken cancellationToken)
@@ -63,6 +66,14 @@ public class InviteMemberCommandHandler : IRequestHandler<InviteMemberCommand, G
 
         _context.BoardMembers.Add(member);
         await _context.SaveChangesAsync(cancellationToken);
+        var activity = await _activity.WriteAsync(
+            request.BoardId,
+            _currentUser.UserId!,
+            "MemberAdded",
+            $"invited {user.DisplayName}",
+            null,
+            cancellationToken);
+        await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "MemberAdded", cancellationToken);
         return member.Id;
     }

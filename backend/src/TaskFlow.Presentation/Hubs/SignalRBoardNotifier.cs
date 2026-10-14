@@ -25,4 +25,11 @@ public class SignalRBoardNotifier : IBoardNotifier
             .Group(BoardHub.GroupName(boardId.ToString()))
             .SendAsync("BoardChanged", new { boardId, changeType }, ct);
     }
+
+    public Task NotifyActivityAddedAsync(Guid boardId, ActivityNotifyDto activity, CancellationToken ct = default)
+    {
+        return _hubContext.Clients
+            .Group(BoardHub.GroupName(boardId.ToString()))
+            .SendAsync("ActivityAdded", activity, ct);
+    }
 }

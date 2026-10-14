@@ -2,6 +2,7 @@ using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Common;
+using TaskFlow.Application.Common.Exceptions;
 using TaskFlow.Application.Common.Interfaces;
 using TaskFlow.Domain.Entities;
 
@@ -14,7 +15,8 @@ public record UpdateCardCommand(
     string? Description,
     Guid? AssigneeId,
     DateTime? DueDateUtc,
-    List<Guid>? LabelIds
+    List<Guid>? LabelIds,
+    byte[]? ExpectedRowVersion
 ) : IRequest;
 
 public class UpdateCardCommandValidator : AbstractValidator<UpdateCardCommand>
@@ -33,15 +35,18 @@ public class UpdateCardCommandHandler : IRequestHandler<UpdateCardCommand>
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IBoardNotifier _notifier;
+    private readonly IActivityWriter _activity;
 
     public UpdateCardCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IBoardNotifier notifier)
+        IBoardNotifier notifier,
+        IActivityWriter activity)
     {
         _context = context;
         _currentUser = currentUser;
         _notifier = notifier;
+        _activity = activity;
     }
 
     public async Task Handle(UpdateCardCommand request, CancellationToken cancellationToken)
@@ -64,6 +69,8 @@ public class UpdateCardCommandHandler : IRequestHandler<UpdateCardCommand>
                 throw new InvalidOperationException("Assignee must be a board member.");
         }
 
+        _context.ApplyExpectedCardRowVersion(card, request.ExpectedRowVersion);
+
         card.Title = request.Title;
         card.Description = request.Description;
         card.AssigneeId = request.AssigneeId;
@@ -84,7 +91,23 @@ public class UpdateCardCommandHandler : IRequestHandler<UpdateCardCommand>
             }
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConcurrencyConflictException();
+        }
+
+        var activity = await _activity.WriteAsync(
+            request.BoardId,
+            _currentUser.UserId,
+            "CardUpdated",
+            $"updated “{card.Title}”",
+            card.Id,
+            cancellationToken);
+        await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "CardUpdated", cancellationToken);
     }
 }

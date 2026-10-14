@@ -26,15 +26,18 @@ public class AddCommentCommandHandler : IRequestHandler<AddCommentCommand, Comme
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IBoardNotifier _notifier;
+    private readonly IActivityWriter _activity;
 
     public AddCommentCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IBoardNotifier notifier)
+        IBoardNotifier notifier,
+        IActivityWriter activity)
     {
         _context = context;
         _currentUser = currentUser;
         _notifier = notifier;
+        _activity = activity;
     }
 
     public async Task<CommentDto> Handle(AddCommentCommand request, CancellationToken cancellationToken)
@@ -59,6 +62,9 @@ public class AddCommentCommandHandler : IRequestHandler<AddCommentCommand, Comme
 
         _context.CardComments.Add(comment);
         await _context.SaveChangesAsync(cancellationToken);
+        var activity = await _activity.WriteAsync(
+            request.BoardId, userId, "CommentAdded", $"commented on a card", request.CardId, cancellationToken);
+        await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "CommentAdded", cancellationToken);
 
         return new CommentDto(comment.Id, author.Id, author.DisplayName, comment.Body, comment.CreatedAtUtc);

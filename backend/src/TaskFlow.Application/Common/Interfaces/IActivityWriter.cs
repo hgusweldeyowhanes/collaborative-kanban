@@ -2,7 +2,7 @@ namespace TaskFlow.Application.Common.Interfaces;
 
 public interface IActivityWriter
 {
-    Task WriteAsync(
+    Task<ActivityNotifyDto> WriteAsync(
         Guid boardId,
         Guid actorUserId,
         string action,

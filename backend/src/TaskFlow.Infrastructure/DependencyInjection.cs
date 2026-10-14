@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using TaskFlow.Application.Common.Interfaces;
 using TaskFlow.Infrastructure.Identity;
 using TaskFlow.Infrastructure.Persistence;
+using TaskFlow.Infrastructure.Services;
 
 namespace TaskFlow.Infrastructure;
 
@@ -19,6 +20,7 @@ public static class DependencyInjection
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ITokenService, TokenService>();
+        services.AddScoped<IActivityWriter, ActivityWriter>();
 
         return services;
     }

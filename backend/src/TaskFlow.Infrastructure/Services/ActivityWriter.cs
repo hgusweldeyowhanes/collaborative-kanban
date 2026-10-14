@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Common.Interfaces;
 using TaskFlow.Domain.Entities;
 
@@ -12,7 +13,7 @@ public class ActivityWriter : IActivityWriter
         _context = context;
     }
 
-    public async Task WriteAsync(
+    public async Task<ActivityNotifyDto> WriteAsync(
         Guid boardId,
         Guid actorUserId,
         string action,
@@ -20,7 +21,12 @@ public class ActivityWriter : IActivityWriter
         Guid? cardId = null,
         CancellationToken cancellationToken = default)
     {
-        _context.BoardActivities.Add(new BoardActivity
+        var actorName = await _context.Users
+            .Where(u => u.Id == actorUserId)
+            .Select(u => u.DisplayName)
+            .FirstOrDefaultAsync(cancellationToken) ?? "Someone";
+
+        var activity = new BoardActivity
         {
             BoardId = boardId,
             ActorUserId = actorUserId,
@@ -28,7 +34,18 @@ public class ActivityWriter : IActivityWriter
             Action = action,
             Summary = summary,
             CreatedAtUtc = DateTime.UtcNow
-        });
+        };
+        _context.BoardActivities.Add(activity);
         await _context.SaveChangesAsync(cancellationToken);
+
+        return new ActivityNotifyDto(
+            activity.Id,
+            boardId,
+            actorUserId,
+            actorName,
+            cardId,
+            action,
+            summary,
+            activity.CreatedAtUtc);
     }
 }

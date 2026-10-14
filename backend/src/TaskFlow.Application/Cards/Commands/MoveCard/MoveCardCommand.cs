@@ -2,11 +2,17 @@ using FluentValidation;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
 using TaskFlow.Application.Common;
+using TaskFlow.Application.Common.Exceptions;
 using TaskFlow.Application.Common.Interfaces;
 
 namespace TaskFlow.Application.Cards.Commands.MoveCard;
 
-public record MoveCardCommand(Guid BoardId, Guid CardId, Guid TargetListId, int NewOrder) : IRequest;
+public record MoveCardCommand(
+    Guid BoardId,
+    Guid CardId,
+    Guid TargetListId,
+    int NewOrder,
+    byte[]? ExpectedRowVersion = null) : IRequest;
 
 public class MoveCardCommandValidator : AbstractValidator<MoveCardCommand>
 {
@@ -24,15 +30,18 @@ public class MoveCardCommandHandler : IRequestHandler<MoveCardCommand>
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IBoardNotifier _notifier;
+    private readonly IActivityWriter _activity;
 
     public MoveCardCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IBoardNotifier notifier)
+        IBoardNotifier notifier,
+        IActivityWriter activity)
     {
         _context = context;
         _currentUser = currentUser;
         _notifier = notifier;
+        _activity = activity;
     }
 
     public async Task Handle(MoveCardCommand request, CancellationToken cancellationToken)
@@ -44,14 +53,15 @@ public class MoveCardCommandHandler : IRequestHandler<MoveCardCommand>
             .FirstOrDefaultAsync(c => c.Id == request.CardId && c.BoardList.BoardId == request.BoardId, cancellationToken)
             ?? throw new KeyNotFoundException($"Card {request.CardId} not found.");
 
-        var targetListOk = await _context.BoardLists
-            .AnyAsync(l => l.Id == request.TargetListId && l.BoardId == request.BoardId, cancellationToken);
-        if (!targetListOk)
-            throw new KeyNotFoundException($"Target list {request.TargetListId} not found.");
+        var targetList = await _context.BoardLists
+            .FirstOrDefaultAsync(l => l.Id == request.TargetListId && l.BoardId == request.BoardId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Target list {request.TargetListId} not found.");
 
         var sourceListId = card.BoardListId;
+        var title = card.Title;
 
-        // Remove from source ordering, then insert into target at NewOrder.
+        _context.ApplyExpectedCardRowVersion(card, request.ExpectedRowVersion);
+
         if (sourceListId != request.TargetListId)
         {
             var sourceSiblings = await _context.Cards
@@ -80,8 +90,26 @@ public class MoveCardCommandHandler : IRequestHandler<MoveCardCommand>
             targetSiblings[i].UpdatedAtUtc = DateTime.UtcNow;
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw new ConcurrencyConflictException();
+        }
 
+        var summary = sourceListId == request.TargetListId
+            ? $"reordered “{title}”"
+            : $"moved “{title}” to {targetList.Title}";
+        var activity = await _activity.WriteAsync(
+            request.BoardId,
+            _currentUser.UserId,
+            "CardMoved",
+            summary,
+            card.Id,
+            cancellationToken);
+        await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyCardMovedAsync(
             request.BoardId, request.CardId, request.TargetListId, insertAt, cancellationToken);
     }

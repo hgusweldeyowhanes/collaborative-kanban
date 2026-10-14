@@ -22,15 +22,18 @@ public class CreateListCommandHandler : IRequestHandler<CreateListCommand, Guid>
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IBoardNotifier _notifier;
+    private readonly IActivityWriter _activity;
 
     public CreateListCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IBoardNotifier notifier)
+        IBoardNotifier notifier,
+        IActivityWriter activity)
     {
         _context = context;
         _currentUser = currentUser;
         _notifier = notifier;
+        _activity = activity;
     }
 
     public async Task<Guid> Handle(CreateListCommand request, CancellationToken cancellationToken)
@@ -51,6 +54,9 @@ public class CreateListCommandHandler : IRequestHandler<CreateListCommand, Guid>
 
         _context.BoardLists.Add(list);
         await _context.SaveChangesAsync(cancellationToken);
+        var activity = await _activity.WriteAsync(
+            request.BoardId, _currentUser.UserId!, "ListCreated", $"added list “{list.Title}”", null, cancellationToken);
+        await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "ListCreated", cancellationToken);
 
         return list.Id;

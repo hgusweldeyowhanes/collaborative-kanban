@@ -24,15 +24,18 @@ public class CreateCardCommandHandler : IRequestHandler<CreateCardCommand, Guid>
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IBoardNotifier _notifier;
+    private readonly IActivityWriter _activity;
 
     public CreateCardCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IBoardNotifier notifier)
+        IBoardNotifier notifier,
+        IActivityWriter activity)
     {
         _context = context;
         _currentUser = currentUser;
         _notifier = notifier;
+        _activity = activity;
     }
 
     public async Task<Guid> Handle(CreateCardCommand request, CancellationToken cancellationToken)
@@ -58,6 +61,9 @@ public class CreateCardCommandHandler : IRequestHandler<CreateCardCommand, Guid>
 
         _context.Cards.Add(card);
         await _context.SaveChangesAsync(cancellationToken);
+        var activity = await _activity.WriteAsync(
+            request.BoardId, _currentUser.UserId!, "CardCreated", $"created “{card.Title}”", card.Id, cancellationToken);
+        await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "CardCreated", cancellationToken);
 
         return card.Id;

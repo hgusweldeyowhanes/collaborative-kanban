@@ -15,7 +15,10 @@ public record CardDto(
     Guid? AssigneeId,
     string? AssigneeName,
     DateTime? DueDateUtc,
-    List<Guid> LabelIds);
+    List<Guid> LabelIds,
+    string? RowVersion,
+    int ChecklistDone,
+    int ChecklistTotal);
 public record BoardListDto(Guid Id, string Title, int Order, List<CardDto> Cards);
 public record BoardDetailDto(
     Guid Id,
@@ -51,6 +54,7 @@ public class GetBoardDetailQueryHandler : IRequestHandler<GetBoardDetailQuery, B
             .Include(b => b.Members).ThenInclude(m => m.User)
             .Include(b => b.Lists).ThenInclude(l => l.Cards).ThenInclude(c => c.Assignee)
             .Include(b => b.Lists).ThenInclude(l => l.Cards).ThenInclude(c => c.CardLabels)
+            .Include(b => b.Lists).ThenInclude(l => l.Cards).ThenInclude(c => c.Checklists).ThenInclude(cl => cl.Items)
             .FirstOrDefaultAsync(cancellationToken)
             ?? throw new KeyNotFoundException($"Board {request.BoardId} not found.");
 
@@ -61,15 +65,22 @@ public class GetBoardDetailQueryHandler : IRequestHandler<GetBoardDetailQuery, B
                 l.Title,
                 l.Order,
                 l.Cards.OrderBy(c => c.Order)
-                    .Select(c => new CardDto(
-                        c.Id,
-                        c.Title,
-                        c.Description,
-                        c.Order,
-                        c.AssigneeId,
-                        c.Assignee?.DisplayName,
-                        c.DueDateUtc,
-                        c.CardLabels.Select(cl => cl.LabelId).ToList()))
+                    .Select(c =>
+                    {
+                        var items = c.Checklists.SelectMany(cl => cl.Items).ToList();
+                        return new CardDto(
+                            c.Id,
+                            c.Title,
+                            c.Description,
+                            c.Order,
+                            c.AssigneeId,
+                            c.Assignee?.DisplayName,
+                            c.DueDateUtc,
+                            c.CardLabels.Select(cl => cl.LabelId).ToList(),
+                            _context.GetCardRowVersion(c),
+                            items.Count(i => i.IsDone),
+                            items.Count);
+                    })
                     .ToList()))
             .ToList();
 

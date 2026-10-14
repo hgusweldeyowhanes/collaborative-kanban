@@ -37,6 +37,9 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         if (expectedRowVersion is null || expectedRowVersion.Length < 4) return;
 
         var entry = Entry(card);
+        if (!entry.Properties.Any(p => p.Metadata.Name == CardConcurrencyProperty))
+            return;
+
         var prop = entry.Property(CardConcurrencyProperty);
         var xmin = BitConverter.ToUInt32(expectedRowVersion, 0);
         prop.OriginalValue = xmin;

@@ -22,15 +22,18 @@ public class DeleteCardCommandHandler : IRequestHandler<DeleteCardCommand>
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IBoardNotifier _notifier;
+    private readonly IActivityWriter _activity;
 
     public DeleteCardCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IBoardNotifier notifier)
+        IBoardNotifier notifier,
+        IActivityWriter activity)
     {
         _context = context;
         _currentUser = currentUser;
         _notifier = notifier;
+        _activity = activity;
     }
 
     public async Task Handle(DeleteCardCommand request, CancellationToken cancellationToken)
@@ -42,8 +45,13 @@ public class DeleteCardCommandHandler : IRequestHandler<DeleteCardCommand>
             .FirstOrDefaultAsync(c => c.Id == request.CardId && c.BoardList.BoardId == request.BoardId, cancellationToken)
             ?? throw new KeyNotFoundException($"Card {request.CardId} not found.");
 
+        var title = card.Title;
+        var cardId = card.Id;
         _context.Cards.Remove(card);
         await _context.SaveChangesAsync(cancellationToken);
+        var activity = await _activity.WriteAsync(
+            request.BoardId, _currentUser.UserId!, "CardDeleted", $"deleted “{title}”", cardId, cancellationToken);
+        await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "CardDeleted", cancellationToken);
     }
 }

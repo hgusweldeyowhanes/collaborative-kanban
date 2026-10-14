@@ -24,15 +24,18 @@ public class CreateLabelCommandHandler : IRequestHandler<CreateLabelCommand, Gui
     private readonly IApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IBoardNotifier _notifier;
+    private readonly IActivityWriter _activity;
 
     public CreateLabelCommandHandler(
         IApplicationDbContext context,
         ICurrentUserService currentUser,
-        IBoardNotifier notifier)
+        IBoardNotifier notifier,
+        IActivityWriter activity)
     {
         _context = context;
         _currentUser = currentUser;
         _notifier = notifier;
+        _activity = activity;
     }
 
     public async Task<Guid> Handle(CreateLabelCommand request, CancellationToken cancellationToken)
@@ -48,6 +51,9 @@ public class CreateLabelCommandHandler : IRequestHandler<CreateLabelCommand, Gui
 
         _context.BoardLabels.Add(label);
         await _context.SaveChangesAsync(cancellationToken);
+        var activity = await _activity.WriteAsync(
+            request.BoardId, _currentUser.UserId!, "LabelCreated", $"created label “{label.Name}”", null, cancellationToken);
+        await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "LabelCreated", cancellationToken);
         return label.Id;
     }
