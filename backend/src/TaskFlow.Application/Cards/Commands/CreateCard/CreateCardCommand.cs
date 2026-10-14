@@ -62,7 +62,7 @@ public class CreateCardCommandHandler : IRequestHandler<CreateCardCommand, Guid>
         _context.Cards.Add(card);
         await _context.SaveChangesAsync(cancellationToken);
         var activity = await _activity.WriteAsync(
-            request.BoardId, _currentUser.UserId!, "CardCreated", $"created “{card.Title}”", card.Id, cancellationToken);
+            request.BoardId, _currentUser.UserId!.Value, "CardCreated", $"created “{card.Title}”", card.Id, cancellationToken);
         await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "CardCreated", cancellationToken);
 

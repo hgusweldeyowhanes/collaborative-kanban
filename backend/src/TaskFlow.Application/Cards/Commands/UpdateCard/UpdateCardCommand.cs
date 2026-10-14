@@ -102,7 +102,7 @@ public class UpdateCardCommandHandler : IRequestHandler<UpdateCardCommand>
 
         var activity = await _activity.WriteAsync(
             request.BoardId,
-            _currentUser.UserId,
+            _currentUser.UserId!.Value,
             "CardUpdated",
             $"updated “{card.Title}”",
             card.Id,

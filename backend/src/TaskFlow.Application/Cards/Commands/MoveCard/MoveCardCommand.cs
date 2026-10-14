@@ -104,7 +104,7 @@ public class MoveCardCommandHandler : IRequestHandler<MoveCardCommand>
             : $"moved “{title}” to {targetList.Title}";
         var activity = await _activity.WriteAsync(
             request.BoardId,
-            _currentUser.UserId,
+            _currentUser.UserId!.Value,
             "CardMoved",
             summary,
             card.Id,

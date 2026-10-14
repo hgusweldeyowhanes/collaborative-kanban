@@ -93,6 +93,46 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.ToTable("Boards");
                 });
 
+            modelBuilder.Entity("TaskFlow.Domain.Entities.BoardActivity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<Guid>("ActorUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("BoardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid?>("CardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("BoardId", "CreatedAtUtc");
+
+                    b.ToTable("BoardActivities");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Entities.BoardLabel", b =>
                 {
                     b.Property<Guid>("Id")
@@ -219,6 +259,12 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.Property<DateTime?>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("Id");
 
                     b.HasIndex("AssigneeId");
@@ -226,6 +272,36 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.HasIndex("BoardListId");
 
                     b.ToTable("Cards");
+                });
+
+            modelBuilder.Entity("TaskFlow.Domain.Entities.CardChecklist", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CardId");
+
+                    b.ToTable("CardChecklists");
                 });
 
             modelBuilder.Entity("TaskFlow.Domain.Entities.CardComment", b =>
@@ -275,6 +351,39 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.ToTable("CardLabels");
                 });
 
+            modelBuilder.Entity("TaskFlow.Domain.Entities.ChecklistItem", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("ChecklistId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("IsDone")
+                        .HasColumnType("boolean");
+
+                    b.Property<int>("Order")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ChecklistId");
+
+                    b.ToTable("ChecklistItems");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Entities.Board", b =>
                 {
                     b.HasOne("TaskFlow.Domain.Entities.AppUser", "Owner")
@@ -284,6 +393,25 @@ namespace TaskFlow.Infrastructure.Migrations
                         .IsRequired();
 
                     b.Navigation("Owner");
+                });
+
+            modelBuilder.Entity("TaskFlow.Domain.Entities.BoardActivity", b =>
+                {
+                    b.HasOne("TaskFlow.Domain.Entities.AppUser", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("TaskFlow.Domain.Entities.Board", "Board")
+                        .WithMany()
+                        .HasForeignKey("BoardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Actor");
+
+                    b.Navigation("Board");
                 });
 
             modelBuilder.Entity("TaskFlow.Domain.Entities.BoardLabel", b =>
@@ -345,6 +473,17 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.Navigation("BoardList");
                 });
 
+            modelBuilder.Entity("TaskFlow.Domain.Entities.CardChecklist", b =>
+                {
+                    b.HasOne("TaskFlow.Domain.Entities.Card", "Card")
+                        .WithMany("Checklists")
+                        .HasForeignKey("CardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Card");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Entities.CardComment", b =>
                 {
                     b.HasOne("TaskFlow.Domain.Entities.AppUser", "Author")
@@ -383,6 +522,17 @@ namespace TaskFlow.Infrastructure.Migrations
                     b.Navigation("Label");
                 });
 
+            modelBuilder.Entity("TaskFlow.Domain.Entities.ChecklistItem", b =>
+                {
+                    b.HasOne("TaskFlow.Domain.Entities.CardChecklist", "Checklist")
+                        .WithMany("Items")
+                        .HasForeignKey("ChecklistId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Checklist");
+                });
+
             modelBuilder.Entity("TaskFlow.Domain.Entities.Board", b =>
                 {
                     b.Navigation("Labels");
@@ -406,7 +556,14 @@ namespace TaskFlow.Infrastructure.Migrations
                 {
                     b.Navigation("CardLabels");
 
+                    b.Navigation("Checklists");
+
                     b.Navigation("Comments");
+                });
+
+            modelBuilder.Entity("TaskFlow.Domain.Entities.CardChecklist", b =>
+                {
+                    b.Navigation("Items");
                 });
 #pragma warning restore 612, 618
         }

@@ -55,7 +55,7 @@ public class CreateListCommandHandler : IRequestHandler<CreateListCommand, Guid>
         _context.BoardLists.Add(list);
         await _context.SaveChangesAsync(cancellationToken);
         var activity = await _activity.WriteAsync(
-            request.BoardId, _currentUser.UserId!, "ListCreated", $"added list “{list.Title}”", null, cancellationToken);
+            request.BoardId, _currentUser.UserId!.Value, "ListCreated", $"added list “{list.Title}”", null, cancellationToken);
         await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "ListCreated", cancellationToken);
 

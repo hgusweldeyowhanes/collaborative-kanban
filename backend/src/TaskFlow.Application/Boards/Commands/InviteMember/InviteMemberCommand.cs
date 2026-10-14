@@ -68,7 +68,7 @@ public class InviteMemberCommandHandler : IRequestHandler<InviteMemberCommand, G
         await _context.SaveChangesAsync(cancellationToken);
         var activity = await _activity.WriteAsync(
             request.BoardId,
-            _currentUser.UserId!,
+            _currentUser.UserId!.Value,
             "MemberAdded",
             $"invited {user.DisplayName}",
             null,

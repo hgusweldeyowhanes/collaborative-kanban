@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using TaskFlow.Presentation.Hubs;
 using TaskFlow.Application;
+using TaskFlow.Application.Common.Exceptions;
 using TaskFlow.Application.Common.Interfaces;
 using TaskFlow.Infrastructure;
 using TaskFlow.Infrastructure.Persistence;
@@ -152,6 +153,16 @@ app.UseExceptionHandler(errorApp =>
         {
             statusCode = 401;
             body = new { title = "Unauthorized" };
+        }
+        else if (exception is ConcurrencyConflictException cex)
+        {
+            statusCode = 409;
+            body = new { title = cex.Message };
+        }
+        else if (exception is DbUpdateConcurrencyException)
+        {
+            statusCode = 409;
+            body = new { title = "Someone else changed this card. Refresh and try again." };
         }
         else if (exception is InvalidOperationException iex)
         {

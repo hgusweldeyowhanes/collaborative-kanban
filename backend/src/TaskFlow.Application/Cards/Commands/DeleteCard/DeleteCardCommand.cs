@@ -50,7 +50,7 @@ public class DeleteCardCommandHandler : IRequestHandler<DeleteCardCommand>
         _context.Cards.Remove(card);
         await _context.SaveChangesAsync(cancellationToken);
         var activity = await _activity.WriteAsync(
-            request.BoardId, _currentUser.UserId!, "CardDeleted", $"deleted “{title}”", cardId, cancellationToken);
+            request.BoardId, _currentUser.UserId!.Value, "CardDeleted", $"deleted “{title}”", cardId, cancellationToken);
         await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "CardDeleted", cancellationToken);
     }

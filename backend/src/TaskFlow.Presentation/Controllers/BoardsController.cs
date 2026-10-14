@@ -5,15 +5,19 @@ using TaskFlow.Application.Boards.Commands.CreateBoard;
 using TaskFlow.Application.Boards.Commands.CreateLabel;
 using TaskFlow.Application.Boards.Commands.CreateList;
 using TaskFlow.Application.Boards.Commands.InviteMember;
+using TaskFlow.Application.Boards.Queries.GetBoardActivities;
 using TaskFlow.Application.Boards.Queries.GetBoardDetail;
 using TaskFlow.Application.Boards.Queries.GetBoardMembers;
 using TaskFlow.Application.Boards.Queries.GetBoards;
 using TaskFlow.Application.Cards.Commands.AddComment;
+using TaskFlow.Application.Cards.Commands.Checklists;
 using TaskFlow.Application.Cards.Commands.CreateCard;
 using TaskFlow.Application.Cards.Commands.DeleteCard;
 using TaskFlow.Application.Cards.Commands.MoveCard;
 using TaskFlow.Application.Cards.Commands.UpdateCard;
+using TaskFlow.Application.Cards.Queries.GetCardChecklists;
 using TaskFlow.Application.Cards.Queries.GetCardComments;
+using TaskFlow.Application.Common;
 using TaskFlow.Domain.Entities;
 
 namespace TaskFlow.Presentation.Controllers;
@@ -44,6 +48,12 @@ public class BoardsController : ControllerBase
         return Ok(result);
     }
 
+    [HttpGet("{id:guid}/activities")]
+    public async Task<ActionResult<List<ActivityDto>>> GetActivities(Guid id, [FromQuery] int take = 50, CancellationToken ct = default)
+    {
+        return Ok(await _mediator.Send(new GetBoardActivitiesQuery(id, take), ct));
+    }
+
     [HttpPost]
     public async Task<ActionResult<Guid>> CreateBoard(CreateBoardCommand command, CancellationToken ct)
     {
@@ -69,7 +79,14 @@ public class BoardsController : ControllerBase
     public async Task<IActionResult> UpdateCard(Guid id, Guid cardId, [FromBody] UpdateCardBody body, CancellationToken ct)
     {
         await _mediator.Send(new UpdateCardCommand(
-            id, cardId, body.Title, body.Description, body.AssigneeId, body.DueDateUtc, body.LabelIds), ct);
+            id,
+            cardId,
+            body.Title,
+            body.Description,
+            body.AssigneeId,
+            body.DueDateUtc,
+            body.LabelIds,
+            RowVersionCodec.Decode(body.RowVersion)), ct);
         return NoContent();
     }
 
@@ -81,9 +98,14 @@ public class BoardsController : ControllerBase
     }
 
     [HttpPost("cards/move")]
-    public async Task<IActionResult> MoveCard(MoveCardCommand command, CancellationToken ct)
+    public async Task<IActionResult> MoveCard([FromBody] MoveCardBody body, CancellationToken ct)
     {
-        await _mediator.Send(command, ct);
+        await _mediator.Send(new MoveCardCommand(
+            body.BoardId,
+            body.CardId,
+            body.TargetListId,
+            body.NewOrder,
+            RowVersionCodec.Decode(body.RowVersion)), ct);
         return NoContent();
     }
 
@@ -120,6 +142,47 @@ public class BoardsController : ControllerBase
         var comment = await _mediator.Send(new AddCommentCommand(id, cardId, body.Body), ct);
         return Ok(comment);
     }
+
+    [HttpGet("{id:guid}/cards/{cardId:guid}/checklists")]
+    public async Task<ActionResult<List<ChecklistDto>>> GetChecklists(Guid id, Guid cardId, CancellationToken ct)
+    {
+        return Ok(await _mediator.Send(new GetCardChecklistsQuery(id, cardId), ct));
+    }
+
+    [HttpPost("{id:guid}/cards/{cardId:guid}/checklists")]
+    public async Task<ActionResult<ChecklistDto>> CreateChecklist(
+        Guid id, Guid cardId, [FromBody] TitleBody body, CancellationToken ct)
+    {
+        return Ok(await _mediator.Send(new CreateChecklistCommand(id, cardId, body.Title), ct));
+    }
+
+    [HttpPost("{id:guid}/cards/{cardId:guid}/checklists/{checklistId:guid}/items")]
+    public async Task<ActionResult<ChecklistItemDto>> AddChecklistItem(
+        Guid id, Guid cardId, Guid checklistId, [FromBody] TitleBody body, CancellationToken ct)
+    {
+        return Ok(await _mediator.Send(new AddChecklistItemCommand(id, cardId, checklistId, body.Title), ct));
+    }
+
+    [HttpPost("{id:guid}/cards/{cardId:guid}/checklist-items/{itemId:guid}/toggle")]
+    public async Task<ActionResult<ChecklistItemDto>> ToggleChecklistItem(
+        Guid id, Guid cardId, Guid itemId, CancellationToken ct)
+    {
+        return Ok(await _mediator.Send(new ToggleChecklistItemCommand(id, cardId, itemId), ct));
+    }
+
+    [HttpDelete("{id:guid}/cards/{cardId:guid}/checklists/{checklistId:guid}")]
+    public async Task<IActionResult> DeleteChecklist(Guid id, Guid cardId, Guid checklistId, CancellationToken ct)
+    {
+        await _mediator.Send(new DeleteChecklistCommand(id, cardId, checklistId), ct);
+        return NoContent();
+    }
+
+    [HttpDelete("{id:guid}/cards/{cardId:guid}/checklist-items/{itemId:guid}")]
+    public async Task<IActionResult> DeleteChecklistItem(Guid id, Guid cardId, Guid itemId, CancellationToken ct)
+    {
+        await _mediator.Send(new DeleteChecklistItemCommand(id, cardId, itemId), ct);
+        return NoContent();
+    }
 }
 
 public record CreateListBody(string Title);
@@ -129,7 +192,10 @@ public record UpdateCardBody(
     string? Description,
     Guid? AssigneeId,
     DateTime? DueDateUtc,
-    List<Guid>? LabelIds);
+    List<Guid>? LabelIds,
+    string? RowVersion);
+public record MoveCardBody(Guid BoardId, Guid CardId, Guid TargetListId, int NewOrder, string? RowVersion);
 public record InviteMemberBody(string Email, BoardRole Role);
 public record CreateLabelBody(string Name, string Color);
 public record AddCommentBody(string Body);
+public record TitleBody(string Title);

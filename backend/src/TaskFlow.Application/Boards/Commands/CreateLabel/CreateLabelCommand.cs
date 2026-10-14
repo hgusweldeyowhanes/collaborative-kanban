@@ -52,7 +52,7 @@ public class CreateLabelCommandHandler : IRequestHandler<CreateLabelCommand, Gui
         _context.BoardLabels.Add(label);
         await _context.SaveChangesAsync(cancellationToken);
         var activity = await _activity.WriteAsync(
-            request.BoardId, _currentUser.UserId!, "LabelCreated", $"created label “{label.Name}”", null, cancellationToken);
+            request.BoardId, _currentUser.UserId!.Value, "LabelCreated", $"created label “{label.Name}”", null, cancellationToken);
         await _notifier.NotifyActivityAddedAsync(request.BoardId, activity, cancellationToken);
         await _notifier.NotifyBoardChangedAsync(request.BoardId, "LabelCreated", cancellationToken);
         return label.Id;
