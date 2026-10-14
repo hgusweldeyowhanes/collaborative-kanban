@@ -2,8 +2,15 @@ import { FormEvent, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addCardComment,
+  addChecklistItem,
+  createChecklist,
   deleteCard,
+  deleteChecklist,
+  deleteChecklistItem,
+  getCardChecklists,
   getCardComments,
+  isConflictError,
+  toggleChecklistItem,
   updateCard,
 } from "../api/boards";
 import type { CardDto, LabelDto, MemberSummaryDto } from "../types";
@@ -38,6 +45,8 @@ export default function CardDetailModal({
   const [comment, setComment] = useState("");
   const [newLabelName, setNewLabelName] = useState("");
   const [newLabelColor, setNewLabelColor] = useState(LABEL_COLORS[0]);
+  const [newChecklistTitle, setNewChecklistTitle] = useState("");
+  const [itemDrafts, setItemDrafts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -53,6 +62,11 @@ export default function CardDetailModal({
     queryFn: () => getCardComments(boardId, card.id),
   });
 
+  const checklistsQuery = useQuery({
+    queryKey: ["checklists", boardId, card.id],
+    queryFn: () => getCardChecklists(boardId, card.id),
+  });
+
   const saveMutation = useMutation({
     mutationFn: () =>
       updateCard(boardId, card.id, {
@@ -61,12 +75,20 @@ export default function CardDetailModal({
         assigneeId: assigneeId || null,
         dueDateUtc: dueDate ? new Date(`${dueDate}T12:00:00Z`).toISOString() : null,
         labelIds,
+        rowVersion: card.rowVersion,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["board", boardId] });
       onClose();
     },
-    onError: () => setError("Could not save card."),
+    onError: (err) => {
+      if (isConflictError(err)) {
+        setError("Someone else changed this card. Refresh the board and try again.");
+        queryClient.invalidateQueries({ queryKey: ["board", boardId] });
+      } else {
+        setError("Could not save card.");
+      }
+    },
   });
 
   const deleteMutation = useMutation({
@@ -84,6 +106,43 @@ export default function CardDetailModal({
       setComment("");
       queryClient.invalidateQueries({ queryKey: ["comments", boardId, card.id] });
     },
+  });
+
+  function invalidateChecklists() {
+    queryClient.invalidateQueries({ queryKey: ["checklists", boardId, card.id] });
+    queryClient.invalidateQueries({ queryKey: ["board", boardId] });
+  }
+
+  const createChecklistMutation = useMutation({
+    mutationFn: (t: string) => createChecklist(boardId, card.id, t),
+    onSuccess: () => {
+      setNewChecklistTitle("");
+      invalidateChecklists();
+    },
+  });
+
+  const addItemMutation = useMutation({
+    mutationFn: ({ checklistId, title: t }: { checklistId: string; title: string }) =>
+      addChecklistItem(boardId, card.id, checklistId, t),
+    onSuccess: (_data, vars) => {
+      setItemDrafts((prev) => ({ ...prev, [vars.checklistId]: "" }));
+      invalidateChecklists();
+    },
+  });
+
+  const toggleItemMutation = useMutation({
+    mutationFn: (itemId: string) => toggleChecklistItem(boardId, card.id, itemId),
+    onSuccess: () => invalidateChecklists(),
+  });
+
+  const deleteChecklistMutation = useMutation({
+    mutationFn: (checklistId: string) => deleteChecklist(boardId, card.id, checklistId),
+    onSuccess: () => invalidateChecklists(),
+  });
+
+  const deleteItemMutation = useMutation({
+    mutationFn: (itemId: string) => deleteChecklistItem(boardId, card.id, itemId),
+    onSuccess: () => invalidateChecklists(),
   });
 
   function toggleLabel(id: string) {
@@ -194,6 +253,102 @@ export default function CardDetailModal({
             </select>
             <button type="submit" className="tf-btn tf-btn-ghost text-xs py-1.5 px-3">
               Add
+            </button>
+          </form>
+        </div>
+
+        <div>
+          <label className="text-xs text-slate-400 uppercase tracking-wide">Checklists</label>
+          <div className="mt-2 space-y-3">
+            {(checklistsQuery.data ?? []).map((cl) => {
+              const done = cl.items.filter((i) => i.isDone).length;
+              const total = cl.items.length;
+              return (
+                <div key={cl.id} className="rounded-lg bg-black/20 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-medium text-slate-200">
+                      {cl.title}{" "}
+                      <span className="text-xs text-slate-500 font-normal">
+                        {done}/{total}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="text-[10px] text-rose-400 hover:text-rose-300"
+                      onClick={() => deleteChecklistMutation.mutate(cl.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  {total > 0 && (
+                    <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                      <div
+                        className="h-full bg-indigo-500 transition-all"
+                        style={{ width: `${(done / total) * 100}%` }}
+                      />
+                    </div>
+                  )}
+                  <ul className="space-y-1">
+                    {cl.items.map((item) => (
+                      <li key={item.id} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={item.isDone}
+                          onChange={() => toggleItemMutation.mutate(item.id)}
+                          className="rounded border-slate-600"
+                        />
+                        <span className={item.isDone ? "line-through text-slate-500 flex-1" : "flex-1"}>
+                          {item.title}
+                        </span>
+                        <button
+                          type="button"
+                          className="text-[10px] text-slate-500 hover:text-rose-400"
+                          onClick={() => deleteItemMutation.mutate(item.id)}
+                        >
+                          ×
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <form
+                    className="flex gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const t = (itemDrafts[cl.id] ?? "").trim();
+                      if (t) addItemMutation.mutate({ checklistId: cl.id, title: t });
+                    }}
+                  >
+                    <input
+                      className="tf-input text-xs flex-1"
+                      placeholder="Add an item…"
+                      value={itemDrafts[cl.id] ?? ""}
+                      onChange={(e) =>
+                        setItemDrafts((prev) => ({ ...prev, [cl.id]: e.target.value }))
+                      }
+                    />
+                    <button type="submit" className="tf-btn tf-btn-ghost text-xs py-1 px-2">
+                      Add
+                    </button>
+                  </form>
+                </div>
+              );
+            })}
+          </div>
+          <form
+            className="flex gap-2 mt-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (newChecklistTitle.trim()) createChecklistMutation.mutate(newChecklistTitle.trim());
+            }}
+          >
+            <input
+              className="tf-input text-xs flex-1"
+              placeholder="New checklist title"
+              value={newChecklistTitle}
+              onChange={(e) => setNewChecklistTitle(e.target.value)}
+            />
+            <button type="submit" className="tf-btn tf-btn-ghost text-xs py-1.5 px-3">
+              Add checklist
             </button>
           </form>
         </div>

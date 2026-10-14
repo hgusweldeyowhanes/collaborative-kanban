@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -16,19 +16,24 @@ import { CSS } from "@dnd-kit/utilities";
 import { useSignalR } from "../hooks/useSignalR";
 import {
   getBoardDetail,
+  getBoardActivities,
   createList,
   createCard,
   moveCard,
   inviteMember,
   createLabel,
+  isConflictError,
 } from "../api/boards";
 import { useAuthStore } from "../store/authStore";
+import { filterCards } from "../utils/cardFilters";
 import CardDetailModal from "./CardDetailModal";
 import type {
+  ActivityDto,
   CardMovedEvent,
   BoardDetailDto,
   BoardListDto,
   CardDto,
+  DuePreset,
   LabelDto,
 } from "../types";
 
@@ -70,7 +75,6 @@ function SortableCard({
       {...attributes}
       {...listeners}
       onClick={(e) => {
-        // Avoid opening while finishing a drag
         if (isDragging) return;
         e.stopPropagation();
         onOpen();
@@ -92,10 +96,13 @@ function SortableCard({
       {card.description && (
         <p className="text-xs text-slate-400 mt-1 line-clamp-2">{card.description}</p>
       )}
-      <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-500">
+      <div className="flex items-center gap-2 mt-2 text-[10px] text-slate-500 flex-wrap">
         {card.assigneeName && <span>{card.assigneeName}</span>}
-        {card.dueDateUtc && (
-          <span>Due {new Date(card.dueDateUtc).toLocaleDateString()}</span>
+        {card.dueDateUtc && <span>Due {new Date(card.dueDateUtc).toLocaleDateString()}</span>}
+        {(card.checklistTotal ?? 0) > 0 && (
+          <span className="text-indigo-300">
+            ✓ {card.checklistDone}/{card.checklistTotal}
+          </span>
         )}
       </div>
     </div>
@@ -144,9 +151,16 @@ export default function BoardViewPage() {
   const [newCardTitle, setNewCardTitle] = useState("");
   const [selectedCardId, setSelectedCardId] = useState<string | null>(null);
   const [showMembers, setShowMembers] = useState(false);
+  const [showActivity, setShowActivity] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteRole, setInviteRole] = useState(1);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+
+  const [query, setQuery] = useState("");
+  const [assigneeId, setAssigneeId] = useState("");
+  const [labelId, setLabelId] = useState("");
+  const [duePreset, setDuePreset] = useState<DuePreset>("all");
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
@@ -155,6 +169,12 @@ export default function BoardViewPage() {
   const { data: board, isLoading, isError } = useQuery({
     queryKey: ["board", boardId],
     queryFn: () => getBoardDetail(boardId!),
+    enabled: !!boardId,
+  });
+
+  const activitiesQuery = useQuery({
+    queryKey: ["activities", boardId],
+    queryFn: () => getBoardActivities(boardId!),
     enabled: !!boardId,
   });
 
@@ -172,7 +192,24 @@ export default function BoardViewPage() {
     onBoardChanged: () => {
       queryClient.invalidateQueries({ queryKey: ["board", boardId] });
     },
+    onActivityAdded: (event: ActivityDto) => {
+      queryClient.setQueryData<ActivityDto[]>(["activities", boardId], (old) => {
+        const list = old ?? [];
+        if (list.some((a) => a.id === event.id)) return list;
+        return [event, ...list].slice(0, 50);
+      });
+    },
   });
+
+  const filteredLists = useMemo(() => {
+    if (!board) return [];
+    return board.lists.map((list) => ({
+      ...list,
+      cards: filterCards(list.cards, { query, assigneeId, labelId, duePreset }),
+    }));
+  }, [board, query, assigneeId, labelId, duePreset]);
+
+  const filtersActive = Boolean(query || assigneeId || labelId || duePreset !== "all");
 
   const createListMutation = useMutation({
     mutationFn: (title: string) => createList(boardId!, title),
@@ -261,7 +298,8 @@ export default function BoardViewPage() {
   async function commitMove(cardId: string, targetListId: string, newOrder: number) {
     if (!boardId || !board) return;
     const source = findListOfCard(cardId, board.lists);
-    if (!source) return;
+    const card = source?.cards.find((c) => c.id === cardId);
+    if (!source || !card) return;
     if (source.id === targetListId) {
       const currentIndex = source.cards.findIndex((c) => c.id === cardId);
       if (currentIndex === newOrder) return;
@@ -276,9 +314,14 @@ export default function BoardViewPage() {
     });
 
     try {
-      await moveCard(boardId, cardId, targetListId, newOrder);
+      await moveCard(boardId, cardId, targetListId, newOrder, card.rowVersion);
+      setBanner(null);
     } catch (err) {
-      console.error("Failed to move card:", err);
+      if (isConflictError(err)) {
+        setBanner("Someone else changed this card. Board refreshed.");
+      } else {
+        console.error("Failed to move card:", err);
+      }
       queryClient.invalidateQueries({ queryKey: ["board", boardId] });
     }
   }
@@ -289,10 +332,33 @@ export default function BoardViewPage() {
 
     const cardId = String(active.id);
     const overId = String(over.id);
-    const targetListId = resolveTargetListId(overId, board.lists);
+    // Use unfiltered board for true order when filters are on
+    const listsForOrder = board.lists;
+    const targetListId = resolveTargetListId(overId, filteredLists);
     if (!targetListId) return;
 
-    const newOrder = resolveNewOrder(board.lists, cardId, targetListId, overId);
+    // Prefer filtered list for drop index when visible, else full list
+    const visibleTarget = filteredLists.find((l) => l.id === targetListId);
+    const fullTarget = listsForOrder.find((l) => l.id === targetListId);
+    if (!fullTarget) return;
+
+    let newOrder: number;
+    if (filtersActive && visibleTarget) {
+      const overInVisible = resolveNewOrder(filteredLists, cardId, targetListId, overId);
+      // Map filtered index into full list: insert among currently visible peers at that slot
+      const visiblePeers = visibleTarget.cards.filter((c) => c.id !== cardId);
+      if (overInVisible >= visiblePeers.length) {
+        newOrder = fullTarget.cards.filter((c) => c.id !== cardId).length;
+      } else {
+        const anchorId = visiblePeers[overInVisible]?.id;
+        const fullPeers = fullTarget.cards.filter((c) => c.id !== cardId);
+        const idx = fullPeers.findIndex((c) => c.id === anchorId);
+        newOrder = idx >= 0 ? idx : fullPeers.length;
+      }
+    } else {
+      newOrder = resolveNewOrder(listsForOrder, cardId, targetListId, overId);
+    }
+
     await commitMove(cardId, targetListId, newOrder);
   }
 
@@ -303,7 +369,7 @@ export default function BoardViewPage() {
     const cardId = String(active.id);
     const overId = String(over.id);
     const sourceList = findListOfCard(cardId, board.lists);
-    const targetListId = resolveTargetListId(overId, board.lists);
+    const targetListId = resolveTargetListId(overId, filteredLists);
     if (!sourceList || !targetListId || sourceList.id === targetListId) return;
 
     const newOrder = resolveNewOrder(board.lists, cardId, targetListId, overId);
@@ -365,6 +431,12 @@ export default function BoardViewPage() {
 
         <div className="flex items-center gap-3">
           <button
+            onClick={() => setShowActivity((v) => !v)}
+            className="tf-btn tf-btn-ghost text-xs py-1.5 px-3"
+          >
+            Activity
+          </button>
+          <button
             onClick={() => setShowMembers((v) => !v)}
             className="tf-btn tf-btn-ghost text-xs py-1.5 px-3"
           >
@@ -382,12 +454,77 @@ export default function BoardViewPage() {
         </div>
       </header>
 
+      {banner && (
+        <div className="mx-6 mt-3 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 text-sm px-3 py-2">
+          {banner}
+        </div>
+      )}
+
       <div className="p-6 pb-2 flex items-start justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold tracking-tight">{board.title}</h2>
-          {board.description && (
-            <p className="text-sm text-slate-400 mt-0.5">{board.description}</p>
-          )}
+        <div className="flex-1 space-y-3">
+          <div>
+            <h2 className="text-2xl font-bold tracking-tight">{board.title}</h2>
+            {board.description && (
+              <p className="text-sm text-slate-400 mt-0.5">{board.description}</p>
+            )}
+          </div>
+
+          <div className="flex flex-wrap gap-2 items-center">
+            <input
+              className="tf-input text-xs w-44"
+              placeholder="Search cards…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            <select
+              className="tf-input text-xs w-40"
+              value={assigneeId}
+              onChange={(e) => setAssigneeId(e.target.value)}
+            >
+              <option value="">All assignees</option>
+              {board.members.map((m) => (
+                <option key={m.userId} value={m.userId}>
+                  {m.displayName}
+                </option>
+              ))}
+            </select>
+            <select
+              className="tf-input text-xs w-36"
+              value={labelId}
+              onChange={(e) => setLabelId(e.target.value)}
+            >
+              <option value="">All labels</option>
+              {board.labels.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="tf-input text-xs w-36"
+              value={duePreset}
+              onChange={(e) => setDuePreset(e.target.value as DuePreset)}
+            >
+              <option value="all">Any due date</option>
+              <option value="overdue">Overdue</option>
+              <option value="thisWeek">Due this week</option>
+              <option value="none">No due date</option>
+            </select>
+            {filtersActive && (
+              <button
+                type="button"
+                className="text-xs text-indigo-300 hover:text-indigo-200"
+                onClick={() => {
+                  setQuery("");
+                  setAssigneeId("");
+                  setLabelId("");
+                  setDuePreset("all");
+                }}
+              >
+                Clear filters
+              </button>
+            )}
+          </div>
         </div>
 
         {showMembers && (
@@ -444,7 +581,7 @@ export default function BoardViewPage() {
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
         >
-          {board.lists.map((list) => (
+          {filteredLists.map((list) => (
             <div key={list.id} className="kanban-list">
               <div className="kanban-list-header">
                 <h3 className="font-semibold text-sm text-slate-200">{list.title}</h3>
@@ -562,6 +699,27 @@ export default function BoardViewPage() {
           >
             + Add List
           </button>
+        )}
+
+        {showActivity && (
+          <aside className="w-72 glass rounded-2xl p-4 flex-shrink-0 max-h-[70vh] overflow-y-auto">
+            <h3 className="text-sm font-semibold mb-3">Activity</h3>
+            <ul className="space-y-2.5 text-xs">
+              {(activitiesQuery.data ?? []).map((a) => (
+                <li key={a.id} className="border-b border-white/5 pb-2 last:border-0">
+                  <div className="text-slate-200">
+                    <span className="font-medium text-indigo-300">{a.actorName}</span> {a.summary}
+                  </div>
+                  <div className="text-slate-500 mt-0.5">
+                    {new Date(a.createdAtUtc).toLocaleString()}
+                  </div>
+                </li>
+              ))}
+              {!activitiesQuery.data?.length && (
+                <li className="text-slate-500">No activity yet.</li>
+              )}
+            </ul>
+          </aside>
         )}
       </div>
 
