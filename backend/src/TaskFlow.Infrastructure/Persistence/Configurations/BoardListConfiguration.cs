@@ -24,6 +24,9 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
         builder.Property(c => c.Title).IsRequired().HasMaxLength(200);
         builder.Property(c => c.Description).HasMaxLength(4000);
 
+        // Postgres system column; ignored by providers that do not support xmin.
+        builder.UseXminAsConcurrencyToken();
+
         builder.HasOne(c => c.Assignee)
             .WithMany()
             .HasForeignKey(c => c.AssigneeId)
@@ -35,6 +38,11 @@ public class CardConfiguration : IEntityTypeConfiguration<Card>
             .OnDelete(DeleteBehavior.Cascade);
 
         builder.HasMany(c => c.CardLabels)
+            .WithOne(x => x.Card)
+            .HasForeignKey(x => x.CardId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasMany(c => c.Checklists)
             .WithOne(x => x.Card)
             .HasForeignKey(x => x.CardId)
             .OnDelete(DeleteBehavior.Cascade);

@@ -43,3 +43,44 @@ public class CardCommentConfiguration : IEntityTypeConfiguration<CardComment>
             .OnDelete(DeleteBehavior.Restrict);
     }
 }
+
+public class BoardActivityConfiguration : IEntityTypeConfiguration<BoardActivity>
+{
+    public void Configure(EntityTypeBuilder<BoardActivity> builder)
+    {
+        builder.Property(a => a.Action).IsRequired().HasMaxLength(64);
+        builder.Property(a => a.Summary).IsRequired().HasMaxLength(500);
+        builder.HasIndex(a => new { a.BoardId, a.CreatedAtUtc });
+
+        builder.HasOne(a => a.Board)
+            .WithMany()
+            .HasForeignKey(a => a.BoardId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne(a => a.Actor)
+            .WithMany()
+            .HasForeignKey(a => a.ActorUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+}
+
+public class CardChecklistConfiguration : IEntityTypeConfiguration<CardChecklist>
+{
+    public void Configure(EntityTypeBuilder<CardChecklist> builder)
+    {
+        builder.Property(c => c.Title).IsRequired().HasMaxLength(200);
+
+        builder.HasMany(c => c.Items)
+            .WithOne(i => i.Checklist)
+            .HasForeignKey(i => i.ChecklistId)
+            .OnDelete(DeleteBehavior.Cascade);
+    }
+}
+
+public class ChecklistItemConfiguration : IEntityTypeConfiguration<ChecklistItem>
+{
+    public void Configure(EntityTypeBuilder<ChecklistItem> builder)
+    {
+        builder.Property(i => i.Title).IsRequired().HasMaxLength(300);
+    }
+}

@@ -17,4 +17,5 @@ public class Card : BaseEntity
 
     public ICollection<CardLabel> CardLabels { get; set; } = new List<CardLabel>();
     public ICollection<CardComment> Comments { get; set; } = new List<CardComment>();
+    public ICollection<CardChecklist> Checklists { get; set; } = new List<CardChecklist>();
 }
